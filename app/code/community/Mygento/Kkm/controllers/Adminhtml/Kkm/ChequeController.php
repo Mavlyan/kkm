@@ -22,7 +22,7 @@ class Mygento_Kkm_Adminhtml_Kkm_ChequeController extends Mage_Adminhtml_Controll
         $id         = $this->getRequest()->getParam('id');
         $vendorName = Mage::helper('kkm')->getConfig('general/vendor');
 
-        if (!$entityType || !$id || in_array($entityType, ['invoice', 'creditmemo'])) {
+        if (!$entityType || !$id || !in_array($entityType, ['invoice', 'creditmemo'])) {
             Mage::getSingleton('adminhtml/session')->addError(Mage::helper('kkm')->__('Something goes wrong. Check log file.'));
             Mage::helper('kkm')->addLog('Invalid url. No id or invalid entity type. Params: ');
             Mage::helper('kkm')->addLog($this->getRequest()->getParams());
@@ -42,19 +42,21 @@ class Mygento_Kkm_Adminhtml_Kkm_ChequeController extends Mage_Adminhtml_Controll
         }
 
         $vendor = Mage::getModel('kkm/vendor_' . $vendorName);
-        $vendor->sendCheque($entity, $entity->getOrder());
 
-        Mage::getSingleton('adminhtml/session')->addSuccess(Mage::helper('kkm')->__('Cheque was sent to KKM. Status of the transaction see in orders comment.'));
-        #TODO: Проверить Ордер - если нужно, то снять с него Failed статус
+        $method = 'sendCheque';
+        if ($entityType == 'creditmemo') {
+            $method  = 'cancelCheque';
+            $comment = 'Refund was sent to KKM. Status of the transaction see in orders comment.';
+        } else {
+            $comment = 'Cheque was sent to KKM. Status of the transaction see in orders comment.';
+        }
+
+        $vendor->$method($entity, $entity->getOrder());
+
+        Mage::getSingleton('adminhtml/session')->addSuccess(Mage::helper('kkm')->__($comment));
 
         $this->_redirectReferer();
     }
-
-    public function viewlogsAction() {
-        $this->loadLayout();
-        $this->renderLayout();
-    }
-
 
     public function getlogAction()
     {
@@ -63,6 +65,10 @@ class Mygento_Kkm_Adminhtml_Kkm_ChequeController extends Mage_Adminhtml_Controll
 
         $transfer = new Varien_File_Transfer_Adapter_Http();
         $transfer->send($file);
+
+        // @codingStandardsIgnoreStart
+        return;
+        // @codingStandardsIgnoreEnd
     }
 
     public function indexAction()
@@ -130,6 +136,20 @@ class Mygento_Kkm_Adminhtml_Kkm_ChequeController extends Mage_Adminhtml_Controll
 
     protected function _isAllowed()
     {
-        return Mage::getSingleton('admin/session')->isAllowed('system/config/kkm');
+        $action = strtolower($this->getRequest()->getActionName());
+
+        switch ($action) {
+            case 'getlog':
+                $aclResource = 'kkm_cheque/getlog';
+                break;
+            case 'resend':
+                $aclResource = 'kkm_cheque/resend';
+                break;
+            default:
+                $aclResource = 'kkm_cheque';
+                break;
+        }
+
+        return Mage::getSingleton('admin/session')->isAllowed($aclResource);
     }
 }

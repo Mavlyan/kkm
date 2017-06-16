@@ -175,8 +175,7 @@ class Mygento_Kkm_Model_Vendor_Atol extends Mygento_Kkm_Model_Abstract
 
         $now_time = Mage::getModel('core/date')->timestamp(time());
         $post = [
-//            'external_id' => $type . $receipt->getIncrementId(),
-            'external_id' => 'invoice_100000026',
+            'external_id' => $type . $receipt->getIncrementId(),
             'service' => [
                 'payment_address' => $this->getConfig('general/payment_address'),
                 'callback_url'    => Mage::getUrl('kkm/index/callback'),

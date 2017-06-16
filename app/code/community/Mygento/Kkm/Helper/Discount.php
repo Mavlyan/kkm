@@ -5,10 +5,12 @@
  *
  * @category Mygento
  * @package Mygento_Kkm
- * @copyright 2017 NKS LLC. (http://www.mygento.ru)
+ * @copyright 2017 NKS LLC. (https://www.mygento.ru)
  */
 class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
 {
+    const VERSION = '1.0.3';
+
     protected $_code = 'kkm';
 
     /** Returns item's data as array with properly calculated discount
@@ -43,61 +45,42 @@ class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
         $grandTotal     = $entity->getData('grand_total');
         $grandDiscount  = $grandTotal-$subTotal-$shippingAmount;
 
-        $sumWithAllDiscount = $grandTotal - $shippingAmount;
-
         $percentageSum = 0;
 
         $items      = $entity->getAllVisibleItems() ? $entity->getAllVisibleItems() : $entity->getAllItems();
         $itemsFinal = [];
         $itemsSum   = 0.00;
-        foreach($items as $item) {
-            if (!$item->getRowTotal() || $item->getRowTotal() === '0.0000') {
+        foreach ($items as $item) {
+            if (!$this->isValidItem($item)) {
                 continue;
             }
 
-            if ($taxAttributeCode) {
-                $storeId  = $entity->getStoreId();
-                $store    = $storeId ? Mage::app()->getStore($storeId) : Mage::app()->getStore();
-
-                $taxValue = Mage::getResourceModel('catalog/product')->getAttributeRawValue($item->getProductId(),
-                    $taxAttributeCode, $store);
-            }
+            $taxValue = $taxAttributeCode ? $this->addTaxValue($taxAttributeCode, $entity, $item) : $taxValue;
 
             $price    = $item->getData('price');
-            $qty      = $item->getQty() ?: $item->getQtyOrdered();;
+            $qty      = $item->getQty() ?: $item->getQtyOrdered();
             $rowTotal = $item->getData('row_total');
 
             //Calculate Percentage. The heart of logic.
             $rowPercentage =  $rowTotal / $subTotal;
+            $percentageSum += $rowPercentage;
 
             $discountPerUnit = $rowPercentage * $grandDiscount / $qty;
             $priceWithDiscount = $this->slyFloor($price + $discountPerUnit);
 
-            $entityItem = [
-                'price' => round($priceWithDiscount, 2),
-                'name' => $item->getName(),
-                'quantity' => round($qty, 2),
-                'sum' => round($priceWithDiscount * $qty, 2),
-                'tax' => $taxValue,
-            ];
+            $entityItem = $this->_buildItem($item, $priceWithDiscount, $taxValue);
 
-            $percentageSum += $rowPercentage;
-
-            $generalHelper->addLog("Item calculation details:");
-            $generalHelper->addLog("Item id: {$item->getId()}. Orig price: {$price} Item rowTotal: {$item->getRowTotal()} Percentage: $rowPercentage. Price of 1 piece: {$priceWithDiscount}. Result of calc:");
-            $generalHelper->addLog($entityItem);
-
-            $itemsFinal[$item->getSku()] = $entityItem;
+            $itemsFinal[$item->getId()] = $entityItem;
             $itemsSum += $entityItem['sum'];
         }
 
         $generalHelper->addLog("Sum of all percentages: {$percentageSum}");
 
         //Calculate DIFF!
-        $itemsSumDiff = $grandTotal - $itemsSum - $shippingAmount;
+        $itemsSumDiff = round($this->slyFloor($grandTotal - $itemsSum - $shippingAmount, 3), 2);
 
-        $generalHelper->addLog("Items sum: {$itemsSum}. Original sum of entity With All Discount: {$sumWithAllDiscount} Diff value: {$itemsSumDiff}");
-        if(bccomp($itemsSumDiff, 0.00, 2) < 0) {
+        $generalHelper->addLog("Items sum: {$itemsSum}. All Discounts: {$grandDiscount} Diff value: {$itemsSumDiff}");
+        if (bccomp($itemsSumDiff, 0.00, 2) < 0) {
             //if: $itemsSumDiff < 0
             $generalHelper->addLog("Notice: Sum of all items is greater than sumWithAllDiscount of entity. ItemsSumDiff: {$itemsSumDiff}");
             $itemsSumDiff = 0.0;
@@ -105,12 +88,11 @@ class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
 
         $receipt = [
             'sum'            => $itemsSum,
-            'origSum'        => $sumWithAllDiscount,
             'origGrandTotal' => floatval($grandTotal)
         ];
 
         $shippingItem = [
-            'name'      => $entity->getOrder()->getShippingDescription(),
+            'name'      => $this->getShippingName($entity),
             'price'     => $entity->getShippingAmount() + $itemsSumDiff,
             'quantity'  => 1.0,
             'sum'       => $entity->getShippingAmount() + $itemsSumDiff,
@@ -120,7 +102,7 @@ class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
         $itemsFinal['shipping'] = $shippingItem;
         $receipt['items']       = $itemsFinal;
 
-        if (!$this->_checkReceipt($receipt)){
+        if (!$this->_checkReceipt($receipt)) {
             $generalHelper->addLog("WARNING: Calculation error! Sum of items is not equal to grandTotal!");
         }
         $generalHelper->addLog("Final result of recalculation:");
@@ -130,18 +112,53 @@ class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
         return $receipt;
     }
 
+    protected function _buildItem($item, $price, $taxValue = '')
+    {
+        $generalHelper = Mage::helper($this->_code);
+
+        $qty = $item->getQty() ?: $item->getQtyOrdered();
+        if (!$qty) {
+            throw new Exception('Divide by zero. Qty of the item is equal to zero! Item: ' . $item->getId());
+        }
+
+        $entityItem = [
+            'price' => round($price, 2),
+            'name' => $item->getName(),
+            'quantity' => round($qty, 2),
+            'sum' => round($price * $qty, 2),
+            'tax' => $taxValue,
+        ];
+
+        $generalHelper->addLog("Item calculation details:");
+        $generalHelper->addLog("Item id: {$item->getId()}. Orig price: {$price} Item rowTotal: {$item->getRowTotal()} Price of 1 piece: {$price}. Result of calc:");
+        $generalHelper->addLog($entityItem);
+
+        return $entityItem;
+    }
+
+    public function getShippingName($entity)
+    {
+        return $entity->getShippingDescription()
+            ?: ($entity->getOrder() ? $entity->getOrder()->getShippingDescription() : '');
+    }
+
     /**Validation method. It sums up all items and compares it to grandTotal.
      * @param array $receipt
      * @return bool True if all items price equal to grandTotal. False - if not.
      */
     protected function _checkReceipt(array $receipt)
     {
-        $sum = array_reduce($receipt['items'], function($carry, $item) {
+        $sum = array_reduce($receipt['items'], function ($carry, $item) {
             $carry += $item['sum'];
             return $carry;
         });
 
         return bcsub($sum, $receipt['origGrandTotal'], 2) === '0.00';
+    }
+
+    public function isValidItem($item)
+    {
+        return $item->getRowTotal() && $item->getRowTotal() !== '0.0000';
     }
 
     public function slyFloor($val, $precision = 2)
@@ -154,5 +171,26 @@ class Mygento_Kkm_Helper_Discount extends Mage_Core_Helper_Abstract
         }
 
         return (floor(abs($val) * $divider) / $divider) * $factor;
+    }
+    
+    protected function addTaxValue($taxAttributeCode, $entity, $item)
+    {
+        if (!$taxAttributeCode) {
+            return '';
+        }
+        $storeId  = $entity->getStoreId();
+        $store    = $storeId ? Mage::app()->getStore($storeId) : Mage::app()->getStore();
+
+        $taxValue = Mage::getResourceModel('catalog/product')->getAttributeRawValue(
+            $item->getProductId(),
+            $taxAttributeCode,
+            $store
+        );
+
+        $attributeModel = Mage::getModel('eav/entity_attribute')->loadByCode('catalog_product', $taxAttributeCode);
+        if ($attributeModel->getData('frontend_input') == 'select') {
+            $taxValue = $attributeModel->getSource()->getOptionText($taxValue);
+        }
+        return $taxValue;
     }
 }

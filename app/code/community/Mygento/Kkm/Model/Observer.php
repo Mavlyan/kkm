@@ -94,7 +94,7 @@ class Mygento_Kkm_Model_Observer
         $kkmFailedStatus = Mage::helper('kkm')->getConfig('general/fail_status');
 
         if ($isKkmFail && $order->getData('status') !== $kkmFailedStatus) {
-            Mage::helper('kkm')->addLog("Order {$order->getId()} needs to change its state to {$kkmFailedStatus}");
+            Mage::helper('kkm')->addLog("Order {$order->getId()} needs to change its status to {$kkmFailedStatus}");
             $order->setKkmChangeStatusFlag(true);
             $order->setStatus($kkmFailedStatus);
 
@@ -105,7 +105,7 @@ class Mygento_Kkm_Model_Observer
 
         //Change order status if it no longer has failed invoices/creditmemos
         if (!$isKkmFail && $order->getData('status') === $kkmFailedStatus) {
-            Mage::helper('kkm')->addLog("Order {$order->getId()} needs to change its state to default status of state {$order->getState()}");
+            Mage::helper('kkm')->addLog("Order with id {$order->getId()} needs to change its status to default status of state '{$order->getState()}'");
             $order->setKkmChangeStatusFlag(true);
             $defaultOrderStatusModel = Mage::getModel('sales/order_status')
                 ->loadDefaultByState($order->getData('state'));
@@ -122,15 +122,28 @@ class Mygento_Kkm_Model_Observer
 
     public function addButtonResend($observer)
     {
+        //Check ACL
+        if (!Mage::getSingleton('admin/session')->isAllowed('kkm_cheque/resend')) {
+            return;
+        }
+
         $container = $observer->getBlock();
-        if (null !== $container && ($container->getType() == 'adminhtml/sales_order_creditmemo_view' || $container->getType() == 'adminhtml/sales_order_invoice_view')) {
-            $entity           = $container->getInvoice() ?: $container->getCreditmemo();
+        if ($this->isProperPageForResendButton($container)) {
+            $entity         = $container->getInvoice() ?: $container->getCreditmemo();
+            $order          = $entity->getOrder();
+            $paymentMethod  = $order->getPayment()->getMethod();
+            $paymentMethods = explode(',', Mage::helper('kkm')->getConfig('general/payment_methods'));
+
+            if (!in_array($paymentMethod, $paymentMethods) || $entity->getOrderCurrencyCode() != 'RUB') {
+                return;
+            }
+
             $type             = $entity::HISTORY_ENTITY_NAME;
             $statusExternalId = "{$type}_" . $entity->getIncrementId();
             $statusModel      = Mage::getModel('kkm/status')->load($statusExternalId, 'external_id');
             $status           = json_decode($statusModel->getStatus());
 
-            if (isset($status->status) && $status->status == 'fail') {
+            if (!$statusModel->getId() || (isset($status->status) && $status->status == 'fail')) {
                 $url = Mage::getModel('adminhtml/url')
                     ->getUrl(
                         'adminhtml/kkm_cheque/resend',
@@ -150,5 +163,15 @@ class Mygento_Kkm_Model_Observer
         }
 
         return $this;
+    }
+
+    /**Check is current page appropriate for "resend to kkm" button
+     *
+     * @param type $block
+     * @return boolean
+     */
+    protected function isProperPageForResendButton($block)
+    {
+        return (null !== $block && ($block->getType() == 'adminhtml/sales_order_creditmemo_view' || $block->getType() == 'adminhtml/sales_order_invoice_view'));
     }
 }

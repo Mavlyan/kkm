@@ -119,7 +119,6 @@ class Mygento_Kkm_Helper_Data extends Mage_Core_Helper_Abstract
 
     public function hasOrderFailedKkmTransactions($order)
     {
-        $this->addLog("Check does order {$order->getId()} have failed kkm transactions.");
         $invoices    = Mage::getModel('sales/order_invoice')->getCollection()
             ->addAttributeToFilter('order_id', ['eq' => $order->getId()]);
         $creditmemos = Mage::getModel('sales/order_creditmemo')->getCollection()
@@ -143,7 +142,10 @@ class Mygento_Kkm_Helper_Data extends Mage_Core_Helper_Abstract
         );
 
         $statuses = Mage::getModel('kkm/status')->getCollection()
-            ->addFieldToFilter('external_id', ['in' => [array_merge($invoicesIncIds, $creditmemosIncIds)]]);
+            ->addFieldToFilter(
+                'external_id',
+                ['in' => array_merge($invoicesIncIds, $creditmemosIncIds)]
+            );
 
         foreach ($statuses as $status) {
             $statusObj = json_decode($status->getStatus());
