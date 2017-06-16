@@ -40,7 +40,7 @@ class Mygento_Kkm_Block_Adminhtml_Logs_Grid extends Mage_Adminhtml_Block_Widget_
         ]);
         $this->addColumn('message', [
             'header' => Mage::helper('kkm')->__('Message'),
-            'align'  => 'right',
+            'align'  => 'left',
             'width'  => '150px',
             'index'  => 'message',
         ]);
@@ -53,7 +53,7 @@ class Mygento_Kkm_Block_Adminhtml_Logs_Grid extends Mage_Adminhtml_Block_Widget_
         $this->addColumn('timestamp', [
             'header' => Mage::helper('kkm')->__('Time'),
             'align'  => 'right',
-            'width'  => '30px',
+            'width'  => '50px',
             'index'  => 'timestamp',
         ]);
         $this->addColumn('advanced_info', [

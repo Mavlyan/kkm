@@ -58,6 +58,11 @@ class Mygento_Kkm_Adminhtml_Kkm_ChequeController extends Mage_Adminhtml_Controll
         $this->_redirectReferer();
     }
 
+    public function viewlogsAction() {
+        $this->loadLayout();
+        $this->renderLayout();
+    }
+
     public function getlogAction()
     {
         $logDir = Mage::getBaseDir('var') . DS . 'log';
